@@ -2,3 +2,6 @@ pyautogui
 pynput
 mouse
 keyboard
+PyQt6
+pyinstaller
+pillow
