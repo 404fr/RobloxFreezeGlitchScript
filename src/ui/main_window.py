@@ -33,6 +33,7 @@ class Gui(QMainWindow):
 
         self.drag_pos = None
         self._is_running = False
+        self._cached_bg_pixmap = None
 
         self.init_ui()
         self.setup_window()
@@ -227,21 +228,28 @@ class Gui(QMainWindow):
             painter = QPainter(self)
             painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
             
-            # Scale pixmap to cover the window
-            scaled = self._bg_pixmap.scaled(
-                self.size(),
-                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                Qt.TransformationMode.SmoothTransformation
-            )
-            
+            if self._cached_bg_pixmap is None or self._cached_bg_pixmap.size() != self.size():
+                # Scale pixmap to cover the window
+                self._cached_bg_pixmap = self._bg_pixmap.scaled(
+                    self.size(),
+                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+
             # Center the image
-            x = (self.width() - scaled.width()) // 2
-            y = (self.height() - scaled.height()) // 2
+            x = (self.width() - self._cached_bg_pixmap.width()) // 2
+            y = (self.height() - self._cached_bg_pixmap.height()) // 2
             
             # Draw with very low opacity
             painter.setOpacity(0.12)
-            painter.drawPixmap(x, y, scaled)
+            painter.drawPixmap(x, y, self._cached_bg_pixmap)
             painter.end()
+
+    def resizeEvent(self, event):
+        """Handle window resize events."""
+        super().resizeEvent(event)
+        self._cached_bg_pixmap = None  # Invalidate cache
+        self.update()  # Trigger a repaint
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
