@@ -24,7 +24,8 @@ class FreezeTool:
         self.saved_coordinates = None
         self.saved_coordinatesBefore = None
         self.f3_pressed = False
-        self.spacebar_pressed = False
+        self.freeze_event = threading.Event()
+        self.worker_thread = None
         self.mouse_listener = None
         self.keyboard_listener = None
         self.running = False
@@ -44,14 +45,21 @@ class FreezeTool:
             self.running = True
             self.keyboard_listener = keyboard.Listener(on_press=self.on_press)
             self.keyboard_listener.start()
+
+            # Start worker thread
+            if self.worker_thread is None or not self.worker_thread.is_alive():
+                self.worker_thread = threading.Thread(target=self._spacebar_worker, daemon=True)
+                self.worker_thread.start()
+
             self.log("Tool started. Move mouse and press 'Q' to save coordinates.")
 
     def stop_tool(self):
         if self.running:
             self.running = False
+            self.freeze_event.set() # Wake up thread so it can exit
             if self.keyboard_listener:
                 self.keyboard_listener.stop()
-            self.spacebar_pressed = False
+            self.freeze_event.clear()
             if self.mouse_listener:
                 self.mouse_listener.stop()
 
@@ -64,16 +72,20 @@ class FreezeTool:
             self.f3_pressed = False
             self.log("Tool stopped.")
 
-    def press_spacebar(self):
+    def _spacebar_worker(self):
         if not keyboard:
             return
         # Create a controller instance for this thread
         kb = keyboard.Controller()
-        while self.spacebar_pressed and self.running:
-            kb.press(keyboard.Key.space)
-            time.sleep(0.1)
-            kb.release(keyboard.Key.space)
-            time.sleep(0.1)
+        while self.running:
+            if self.freeze_event.wait(timeout=0.1):
+                if not self.running: break
+                # Check again if we should be pressing (event is set)
+                if self.freeze_event.is_set():
+                    kb.press(keyboard.Key.space)
+                    time.sleep(0.1)
+                    kb.release(keyboard.Key.space)
+                    time.sleep(0.1)
 
     def on_press(self, key):
         try:
@@ -104,8 +116,7 @@ class FreezeTool:
                     mouse.move(*self.saved_coordinates)
                 mouse.press('left')
 
-            self.spacebar_pressed = True
-            threading.Thread(target=self.press_spacebar, daemon=True).start()
+            self.freeze_event.set()
 
             # Start mouse listener to suppress movement
             if pynput:
@@ -113,7 +124,7 @@ class FreezeTool:
                 self.mouse_listener.start()
         else:
             self.log("Freeze DISABLED")
-            self.spacebar_pressed = False
+            self.freeze_event.clear()
             if self.mouse_listener:
                 self.mouse_listener.stop()
                 self.mouse_listener = None
