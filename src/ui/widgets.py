@@ -157,6 +157,24 @@ class KeyBadge(QWidget):
 
         # Set accessible name for screen readers
         self.setAccessibleName(f"Key {key}, {label}")
+
+        # Pre-calculate fonts and rects
+        self._key_font = QFont("Segoe UI", 14)
+        self._key_font.setBold(True)
+        self._label_font = QFont("Segoe UI", 8)
+        self._label_font.setBold(False)
+
+        self._key_rect = QRect(15, 5, 50, 40)
+        self._label_rect = QRect(0, 48, 80, 20)
+
+        # Pre-create common colors/pens/brushes?
+        # Colors are cheap, but we can avoid recreating QColor(34, 211, 238, 150) every time
+        self._pressed_bg = QColor(34, 211, 238, 150)
+        self._pressed_pen = QPen(QColor(34, 211, 238), 2)
+        self._normal_bg = QColor(40, 40, 50, 150)
+        self._normal_pen = QPen(QColor(100, 100, 120), 1)
+        self._text_color = QColor(255, 255, 255)
+        self._label_color = QColor(150, 150, 160)
     
     def set_pressed(self, pressed: bool):
         """Visual feedback for key press."""
@@ -167,34 +185,26 @@ class KeyBadge(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        # Draw key badge
-        key_rect = QRect(15, 5, 50, 40)
-        
         # Background
         if self._pressed:
-            painter.setBrush(QColor(34, 211, 238, 150))
-            painter.setPen(QPen(QColor(34, 211, 238), 2))
+            painter.setBrush(self._pressed_bg)
+            painter.setPen(self._pressed_pen)
         else:
-            painter.setBrush(QColor(40, 40, 50, 150))
-            painter.setPen(QPen(QColor(100, 100, 120), 1))
+            painter.setBrush(self._normal_bg)
+            painter.setPen(self._normal_pen)
         
-        painter.drawRoundedRect(key_rect, 8, 8)
+        painter.drawRoundedRect(self._key_rect, 8, 8)
         
         # Key text
-        painter.setPen(QColor(255, 255, 255))
-        font = QFont("Segoe UI", 14)
-        font.setBold(True)
-        painter.setFont(font)
-        painter.drawText(key_rect, Qt.AlignmentFlag.AlignCenter, self._key)
+        painter.setPen(self._text_color)
+        painter.setFont(self._key_font)
+        painter.drawText(self._key_rect, Qt.AlignmentFlag.AlignCenter, self._key)
         
         # Label below
         if self._label:
-            painter.setPen(QColor(150, 150, 160))
-            font.setPointSize(8)
-            font.setBold(False)
-            painter.setFont(font)
-            label_rect = QRect(0, 48, 80, 20)
-            painter.drawText(label_rect, Qt.AlignmentFlag.AlignCenter, self._label)
+            painter.setPen(self._label_color)
+            painter.setFont(self._label_font)
+            painter.drawText(self._label_rect, Qt.AlignmentFlag.AlignCenter, self._label)
         
         painter.end()
 
@@ -218,6 +228,23 @@ class StatusIndicator(QWidget):
         self._pulse_anim.setEndValue(1.0)
         self._pulse_anim.setLoopCount(-1)
         self._pulse_anim.setEasingCurve(QEasingCurve.Type.InOutSine)
+
+        # Status colors
+        self._colors = {
+            "ready": QColor(150, 150, 160),
+            "running": QColor(34, 211, 238),
+            "frozen": QColor(45, 212, 191),
+            "stopped": QColor(200, 100, 100)
+        }
+
+        # Cached font and rects
+        self._font = QFont("Segoe UI", 10)
+        self._font.setBold(True)
+        self._text_rect = QRect(50, 0, 150, 40)
+
+    def resizeEvent(self, event):
+        self._text_rect = QRect(50, 0, 150, self.height())
+        super().resizeEvent(event)
     
     @pyqtProperty(float)
     def pulse(self):
@@ -248,14 +275,7 @@ class StatusIndicator(QWidget):
         center_x = 25
         center_y = self.height() // 2
         
-        # Status colors
-        colors = {
-            "ready": QColor(150, 150, 160),
-            "running": QColor(34, 211, 238),
-            "frozen": QColor(45, 212, 191),
-            "stopped": QColor(200, 100, 100)
-        }
-        color = colors.get(self._status, colors["ready"])
+        color = self._colors.get(self._status, self._colors["ready"])
         
         # Draw pulsing rings for active states
         if self._status in ("running", "frozen"):
@@ -276,11 +296,8 @@ class StatusIndicator(QWidget):
         
         # Draw text
         painter.setPen(color)
-        font = QFont("Segoe UI", 10)
-        font.setBold(True)
-        painter.setFont(font)
-        text_rect = QRect(50, 0, 150, self.height())
-        painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter | 
+        painter.setFont(self._font)
+        painter.drawText(self._text_rect, Qt.AlignmentFlag.AlignVCenter |
                         Qt.AlignmentFlag.AlignLeft, self._text)
         
         painter.end()
