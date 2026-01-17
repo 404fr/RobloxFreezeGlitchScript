@@ -1,3 +1,12 @@
+"""
+Core logic for the RoFreeze application.
+
+This module handles the automation logic, including:
+- Monitoring keyboard input for hotkeys (Q to set point, F3 to toggle freeze).
+- Controlling mouse position (locking to a point).
+- Simulating spacebar presses (the "freeze" mechanism).
+"""
+
 import time
 import threading
 
@@ -20,7 +29,16 @@ except (ImportError, OSError):
     mouse = None
 
 class FreezeTool:
+    """
+    Manages the freeze glitch logic, input listeners, and worker threads.
+    """
     def __init__(self, status_callback=None):
+        """
+        Initialize the FreezeTool.
+
+        Args:
+            status_callback (callable, optional): A function to call with status messages.
+        """
         self.saved_coordinates = None
         self.saved_coordinatesBefore = None
         self.f3_pressed = False
@@ -32,11 +50,20 @@ class FreezeTool:
         self.status_callback = status_callback
 
     def log(self, message):
+        """
+        Log a message to the console and the status callback.
+
+        Args:
+            message (str): The message to log.
+        """
         print(message)
         if self.status_callback:
             self.status_callback(message)
 
     def start_tool(self):
+        """
+        Start the keyboard listener and the background worker thread.
+        """
         if not self.running:
             if not keyboard:
                 self.log("Error: pynput.keyboard not available (headless environment?)")
@@ -54,6 +81,9 @@ class FreezeTool:
             self.log("Tool started. Move mouse and press 'Q' to save coordinates.")
 
     def stop_tool(self):
+        """
+        Stop the listeners and the worker thread.
+        """
         if self.running:
             self.running = False
             self.freeze_event.set() # Wake up thread so it can exit
@@ -73,6 +103,9 @@ class FreezeTool:
             self.log("Tool stopped.")
 
     def _spacebar_worker(self):
+        """
+        Background worker that presses the spacebar when the freeze event is set.
+        """
         if not keyboard:
             return
         # Create a controller instance for this thread
@@ -88,6 +121,12 @@ class FreezeTool:
                     time.sleep(0.1)
 
     def on_press(self, key):
+        """
+        Callback for keyboard key presses.
+
+        Args:
+            key: The key that was pressed.
+        """
         try:
             if hasattr(key, 'char') and key.char and key.char.lower() == 'q' and self.saved_coordinates is None:
                 if pyautogui:
@@ -102,6 +141,9 @@ class FreezeTool:
             self.toggle_freeze()
 
     def toggle_freeze(self):
+        """
+        Toggle the freeze state on or off.
+        """
         self.f3_pressed = not self.f3_pressed
         if self.f3_pressed:
             if pyautogui:
