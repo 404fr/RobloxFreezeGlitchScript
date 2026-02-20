@@ -63,6 +63,26 @@ def apply_acrylic(hwnd, hex_color="#1e1e1e", alpha=150):
     except Exception as e:
         print(f"Failed to apply acrylic effect: {e}")
 
+def apply_rounded_corners(hwnd):
+    """
+    Ask DWM to round the window corners at the compositor level (Windows 11+).
+    On earlier Windows versions this call fails silently.
+    This fixes the acrylic effect bleeding into the transparent corner areas.
+    """
+    if platform.system() != "Windows":
+        return
+    try:
+        DWMWA_WINDOW_CORNER_PREFERENCE = 33
+        DWMWCP_ROUND = 2
+        pref = c_int(DWMWCP_ROUND)
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+            byref(pref), sizeof(pref)
+        )
+    except Exception:
+        pass
+
+
 def apply_blur(hwnd):
     """Fallback to standard blur if acrylic fails or simply preferred."""
     if platform.system() != "Windows":

@@ -7,11 +7,11 @@ import sys
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QLabel, 
                              QPushButton, QHBoxLayout, QFrame, QGraphicsOpacityEffect)
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject, QPropertyAnimation, QEasingCurve
-from PyQt6.QtGui import QFont, QPixmap, QPainter, QColor, QLinearGradient, QIcon, QPen
+from PyQt6.QtGui import QFont, QPixmap, QPainter, QColor, QLinearGradient, QIcon, QPen, QPainterPath, QRegion, QBitmap
 
 from src.core.freeze_logic import FreezeTool
 from src.ui import blur_window as BlurWindow
-from src.ui.widgets import ModernButton, KeyBadge, StatusIndicator
+from src.ui.widgets import ModernButton, KeyButton, StatusBadge, ToggleSwitch
 from src.ui.animated_logo import AnimatedLogo
 from src.ui.particles import ParticleSystem
 from src.ui.animations import AnimationHelper
@@ -90,8 +90,9 @@ class Gui(QMainWindow):
             self.setWindowIcon(QIcon(icon_path))
 
         # Dimensions
-        self.resize(380, 520)
+        self.resize(380, 575)
         self.center()
+        self._update_window_mask()
 
         # Apply glass effect after window handle exists
         QTimer.singleShot(100, self.enable_acrylic)
@@ -99,6 +100,26 @@ class Gui(QMainWindow):
         # Entrance Animation
         self.setWindowOpacity(0.0)
         self._entrance_anim = QTimer.singleShot(200, self.animate_entrance)
+
+    def _update_window_mask(self):
+        """Clip bg_container and all its children to the rounded-rect shape.
+
+        setMask() on the main window is ineffective when WA_TranslucentBackground
+        is active because that attribute sets WS_EX_LAYERED, and Windows does not
+        allow SetWindowRgn on layered windows.  Applying the mask to bg_container
+        (a plain child widget) works correctly and clips every child widget too.
+        """
+        if not hasattr(self, 'bg_container'):
+            return
+        w, h = self.width(), self.height()
+        bitmap = QBitmap(w, h)
+        bitmap.fill(Qt.GlobalColor.color0)          # fully transparent
+        p = QPainter(bitmap)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(Qt.GlobalColor.color1)           # opaque inside
+        p.drawRoundedRect(0, 0, w, h, 20, 20)
+        p.end()
+        self.bg_container.setMask(bitmap)
 
     def animate_entrance(self):
         """Fade in and slide up slightly."""
@@ -115,9 +136,9 @@ class Gui(QMainWindow):
             self.setWindowOpacity(1.0)
         
         # Staggered reveal for children
-        widgets = [self.animated_logo, self.title_label, 
-                  self.key_q, self.key_f3, 
-                  self.status_container, self.toggle_btn]
+        widgets = [self.animated_logo, self.title_label,
+                  self.status_badge, self.toggle_btn, self.fp_card,
+                  self.key_q_btn, self.key_f3_btn]
         
         for i, widget in enumerate(widgets):
             # Initially invisible
@@ -149,6 +170,9 @@ class Gui(QMainWindow):
             hwnd = int(self.winId())
             # Dark acrylic with teal tint
             BlurWindow.apply_acrylic(hwnd, hex_color="#0A1520", alpha=200)
+            # On Windows 11, let DWM round the window corners so the acrylic
+            # effect doesn't bleed into the transparent corner areas.
+            BlurWindow.apply_rounded_corners(hwnd)
         except Exception as e:
             print(f"Error applying acrylic: {e}")
 
@@ -157,39 +181,36 @@ class Gui(QMainWindow):
         central_widget = QWidget()
         central_widget.setObjectName("CentralWidget")
         self.setCentralWidget(central_widget)
-        
-        # Main layout with stacking for background
+
+        # Main layout
         main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
-        
-        # Background container (for texture)
+
+        # Background container
         self.bg_container = QWidget()
         self.bg_container.setObjectName("BgContainer")
         main_layout.addWidget(self.bg_container)
-        
-        # Load and set background texture
+
         self._setup_background()
-        
+
         # Content overlay
         content_layout = QVBoxLayout(self.bg_container)
-        content_layout.setContentsMargins(30, 20, 30, 30)
-        content_layout.setSpacing(15)
-        
-        # Apply styling to container
+        content_layout.setContentsMargins(24, 20, 24, 24)
+        content_layout.setSpacing(0)
+
         self.bg_container.setStyleSheet("""
             #BgContainer {
                 background-color: rgba(10, 21, 32, 180);
                 border-radius: 20px;
-                border: 1px solid rgba(34, 211, 238, 0.2);
             }
         """)
-        
-        # === Header with close button ===
+
+        # === Header: close btn (left) + status badge (right) ===
         header_layout = QHBoxLayout()
-        header_layout.addStretch()
-        
-        self.close_btn = QPushButton("X")
+        header_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.close_btn = QPushButton("✕")
         self.close_btn.setFixedSize(32, 32)
         self.close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.close_btn.setToolTip("Close Application")
@@ -204,85 +225,99 @@ class Gui(QMainWindow):
                 font-weight: bold;
                 font-size: 14px;
             }
-            QPushButton:hover { 
+            QPushButton:hover {
                 background: rgba(255, 100, 100, 50);
-                color: #ffffff; 
+                color: #ffffff;
             }
         """)
+
+        self.status_badge = StatusBadge()
+        self.status_badge.set_status("ready", "Ready")
+
         header_layout.addWidget(self.close_btn)
+        header_layout.addStretch()
+        header_layout.addWidget(self.status_badge)
         content_layout.addLayout(header_layout)
-        
+
+        content_layout.addSpacing(10)
+
         # === Animated Logo ===
         logo_container = QWidget()
         logo_layout = QHBoxLayout(logo_container)
         logo_layout.setContentsMargins(0, 0, 0, 0)
         logo_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        self.animated_logo = AnimatedLogo(size=70)
+
+        self.animated_logo = AnimatedLogo(size=80)
         self.animated_logo.start_animations()
         logo_layout.addWidget(self.animated_logo)
-        
+
         content_layout.addWidget(logo_container)
-        
+
+        content_layout.addSpacing(16)
+
         # === Title ===
-        self.title_label = GradientLabel("RoFreeze")
-        # Define gradient colors
+        self.title_label = GradientLabel("ROFREEZE", size=30)
         self.title_label.set_gradient_colors(QColor(34, 211, 238), QColor(45, 212, 191))
         content_layout.addWidget(self.title_label)
-        
-        # === Description ===
-        desc_label = QLabel("Macro to freeze the roblox client.")
-        desc_font = QFont("Segoe UI", 10)
-        desc_label.setFont(desc_font)
-        desc_label.setStyleSheet("color: rgba(180, 200, 220, 200);")
-        desc_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        desc_label.setWordWrap(True)
-        content_layout.addWidget(desc_label)
-        
-        content_layout.addSpacing(10)
-        
-        # === Keyboard Shortcuts ===
-        shortcuts_container = QWidget()
-        shortcuts_layout = QHBoxLayout(shortcuts_container)
-        shortcuts_layout.setContentsMargins(0, 0, 0, 0)
-        shortcuts_layout.setSpacing(20)
-        shortcuts_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        self.key_q = KeyBadge("Q", "Set Point", tooltip="Press Q to set the freeze point")
-        self.key_f3 = KeyBadge("F3", "Toggle", tooltip="Press F3 to toggle freeze")
-        
-        shortcuts_layout.addWidget(self.key_q)
-        shortcuts_layout.addWidget(self.key_f3)
-        
-        content_layout.addWidget(shortcuts_container)
-        
-        content_layout.addSpacing(5)
-        
-        # === Status Indicator ===
-        self.status_container = QWidget()
-        status_layout = QHBoxLayout(self.status_container)
-        status_layout.setContentsMargins(0, 0, 0, 0)
-        status_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        self.status_indicator = StatusIndicator()
-        self.status_indicator.set_status("ready", "Ready")
-        status_layout.addWidget(self.status_indicator)
-        
-        content_layout.addWidget(self.status_container)
-        
+
         content_layout.addStretch()
-        
-        # Particles (Manual positioning in resizeEvent/setup)
+
+        # Particles (send to back)
         self.particles = ParticleSystem(self.bg_container, count=25)
-        self.particles.lower() # Send to back
-        
-        # === Action Button ===
+        self.particles.lower()
+
+        # === Toggle Button ===
         self.toggle_btn = ModernButton("Get Started")
         self.toggle_btn.setToolTip("Start or stop the freeze macro")
         self.toggle_btn.clicked.connect(self.toggle_tool)
         content_layout.addWidget(self.toggle_btn)
-        
-        content_layout.addSpacing(10)
+
+        content_layout.addSpacing(12)
+
+        # === First Person / Mouse Lock Settings Card ===
+        self.fp_card = QFrame()
+        self.fp_card.setObjectName("FpCard")
+        self.fp_card.setStyleSheet("""
+            QFrame#FpCard {
+                background-color: rgba(255, 255, 255, 8);
+                border: 1px solid rgba(255, 255, 255, 18);
+                border-radius: 12px;
+            }
+        """)
+        fp_card_layout = QHBoxLayout(self.fp_card)
+        fp_card_layout.setContentsMargins(14, 10, 14, 10)
+        fp_card_layout.setSpacing(8)
+
+        fp_label = QLabel("First Person / Mouse Lock")
+        fp_label.setStyleSheet("color: rgba(200, 210, 220, 210); background: transparent; border: none;")
+        fp_label.setFont(QFont("Segoe UI", 10))
+
+        self.fp_toggle = ToggleSwitch()
+        self.fp_toggle.setToolTip(
+            "Enable when playing in first-person or with mouse lock active.\n"
+            "Skips cursor repositioning and movement suppression."
+        )
+        self.fp_toggle.toggled.connect(self._on_fp_toggle)
+
+        fp_card_layout.addWidget(fp_label)
+        fp_card_layout.addStretch()
+        fp_card_layout.addWidget(self.fp_toggle)
+        content_layout.addWidget(self.fp_card)
+
+        content_layout.addSpacing(16)
+
+        # === Key Buttons Row ===
+        key_row = QWidget()
+        key_layout = QHBoxLayout(key_row)
+        key_layout.setContentsMargins(0, 0, 0, 0)
+        key_layout.setSpacing(12)
+
+        self.key_q_btn = KeyButton("Q", "Set Point", tooltip="Press Q to set the freeze point")
+        self.key_f3_btn = KeyButton("F3", "Toggle", tooltip="Press F3 to toggle freeze")
+
+        key_layout.addWidget(self.key_q_btn)
+        key_layout.addWidget(self.key_f3_btn)
+        content_layout.addWidget(key_row)
 
     def _setup_background(self):
         """Setup the northern lights background texture with low opacity."""
@@ -300,6 +335,10 @@ class Gui(QMainWindow):
         if hasattr(self, '_bg_pixmap') and self._bg_pixmap and not self._bg_pixmap.isNull():
             painter = QPainter(self)
             painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+
+            clip_path = QPainterPath()
+            clip_path.addRoundedRect(0, 0, self.width(), self.height(), 20, 20)
+            painter.setClipPath(clip_path)
             
             if self._cached_bg_pixmap is None or self._cached_bg_pixmap.size() != self.size():
                 # Scale pixmap to cover the window
@@ -321,6 +360,7 @@ class Gui(QMainWindow):
     def resizeEvent(self, event):
         """Handle window resize events."""
         super().resizeEvent(event)
+        self._update_window_mask()
         self._cached_bg_pixmap = None  # Invalidate cache
         
         # Resize particles to match container
@@ -344,20 +384,19 @@ class Gui(QMainWindow):
         lower_msg = message.lower()
         
         if "frozen" in lower_msg or "freeze" in lower_msg:
-            self.status_indicator.set_status("frozen", message)
+            self.status_badge.set_status("frozen", message)
         elif "running" in lower_msg or "started" in lower_msg:
-            self.status_indicator.set_status("running", message)
+            self.status_badge.set_status("running", message)
         elif "stopped" in lower_msg:
-            self.status_indicator.set_status("stopped", message)
+            self.status_badge.set_status("stopped", message)
             self._update_theme("stopped")
         elif "point set" in lower_msg or "saved" in lower_msg:
-            # Brief visual feedback on key badge
-            self.key_q.set_pressed(True)
-            QTimer.singleShot(300, lambda: self.key_q.set_pressed(False))
-            self.status_indicator.set_status("running", message)
-            # No theme change for point set
+            # Brief visual feedback on key button
+            self.key_q_btn.set_pressed(True)
+            QTimer.singleShot(300, lambda: self.key_q_btn.set_pressed(False))
+            self.status_badge.set_status("running", message)
         else:
-            self.status_indicator.set_status("ready", message)
+            self.status_badge.set_status("ready", message)
             self._update_theme("ready")
 
     def _update_theme(self, status):
@@ -371,28 +410,25 @@ class Gui(QMainWindow):
                 #BgContainer {
                     background-color: rgba(15, 20, 35, 190);
                     border-radius: 20px;
-                    border: 1px solid rgba(168, 85, 247, 0.4);
                 }
             """
             c1, c2 = QColor(168, 85, 247), QColor(34, 211, 238)
-            
+
         elif status == "frozen":
             # Icy Blue
             style = """
                 #BgContainer {
                     background-color: rgba(10, 25, 40, 190);
                     border-radius: 20px;
-                    border: 1px solid rgba(96, 165, 250, 0.5);
                 }
             """
             c1, c2 = QColor(96, 165, 250), QColor(196, 235, 255)
-            
+
         else: # Ready / Stopped
             style = """
                 #BgContainer {
                     background-color: rgba(10, 21, 32, 180);
                     border-radius: 20px;
-                    border: 1px solid rgba(34, 211, 238, 0.2);
                 }
             """
             c1, c2 = QColor(34, 211, 238), QColor(45, 212, 191)
@@ -411,14 +447,18 @@ class Gui(QMainWindow):
             self.toggle_btn.setText("Stop")
             self.toggle_btn.set_active(True)
             self.animated_logo.set_active(True)
-            self.status_indicator.set_status("running", "Running...")
+            self.status_badge.set_status("running", "Running...")
         else:
             self.logic.stop_tool()
             self._is_running = False
             self.toggle_btn.setText("Get Started")
             self.toggle_btn.set_active(False)
             self.animated_logo.set_active(False)
-            self.status_indicator.set_status("ready", "Stopped")
+            self.status_badge.set_status("ready", "Stopped")
+
+    def _on_fp_toggle(self, checked: bool):
+        """Propagate first-person mode setting to the logic layer."""
+        self.logic.first_person_mode = checked
 
     def close_app(self):
         self.logic.stop_tool()

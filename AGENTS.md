@@ -11,7 +11,7 @@ The project follows a clear separation of concerns:
 - **`src/ui/`**: Contains all User Interface code.
   - `main_window.py`: The main entry point for the GUI. Handles the window setup, layout, and connects UI events to logic.
   - `blur_window.py`: Handles the Windows API calls necessary to achieve the acrylic/blur effect behind the window.
-  - `widgets.py`: Custom styled Qt widgets (buttons, badges, indicators).
+  - `widgets.py`: Custom styled Qt widgets (`ModernButton`, `KeyButton`, `StatusBadge`, `ToggleSwitch`, and others).
   - `animated_logo.py`: A custom painted animated logo widget.
 - **`src/core/`**: Contains the application logic.
   - `freeze_logic.py`: The core logic class (`FreezeTool`). It manages the keyboard/mouse listeners and the freezing thread.
@@ -42,16 +42,30 @@ The project follows a clear separation of concerns:
 
 ### 3. Windows Specifics
 - The acrylic effect in `blur_window.py` relies on user32.dll and dwmapi.dll. This feature is Windows 10/11 specific.
-- Development on non-Windows platforms is possible for logic, but the UI effects may not render correctly.
+- `freeze_logic.py` uses `ctypes.windll.user32` (`GetClipCursor`, `ClipCursor`) for the first-person mode path. These calls are wrapped in try-except and only reached when `first_person_mode` is `True`.
+- Development on non-Windows platforms is possible for logic, but the UI effects and first-person mode path may not work correctly.
+
+### 4. First Person / Mouse Lock Mode
+`FreezeTool` has a `first_person_mode: bool` flag (default `False`) toggled via the `ToggleSwitch` in the UI. When enabled, `toggle_freeze()`:
+1. Saves Roblox's `ClipCursor` rect via `GetClipCursor` into `self._saved_clip_rect`.
+2. Calls `ClipCursor(None)` to release the confinement so `mouse.move()` can land.
+3. Skips starting `pynput.mouse.Listener(suppress=True)` (that listener conflicts with Roblox's raw DirectInput camera in first-person).
+4. On disable (F3 again or `stop_tool()`), restores the saved rect via `ClipCursor(byref(self._saved_clip_rect))`.
+
+Do not remove the `_saved_clip_rect` save/restore pattern — it is what allows the game's cursor lock to snap back after the freeze is released.
 
 ## Testing & Verification
 - **Unit Testing**: Difficult for this project due to global input hooks.
-- **Manual Verification**:
+- **Manual Verification (third-person / default)**:
   1. Run `python main.py`.
   2. Click "Get Started".
   3. Focus on another window (e.g., Notepad).
   4. Press 'Q'. Verify the UI status updates to "Point set".
   5. Press 'F3'. Verify the mouse locks to the position and spacebar starts spamming (check in Notepad).
-  6. Press 'F3' again to stop.
+  6. Press 'F3' again to stop. Verify cursor returns to prior position.
+- **Manual Verification (first-person / mouse-lock)**:
+  1. Enable the "First Person / Mouse Lock" toggle in the UI.
+  2. Repeat steps 2–6 above. Verify the mouse still moves and clicks at the saved point.
+  3. After pressing F3 to unfreeze, verify the cursor confinement is restored (cursor stays within the game window bounds).
 
 **Caution**: When testing the freeze functionality, be prepared to use the stop shortcut (F3) or close the application if input control is lost.

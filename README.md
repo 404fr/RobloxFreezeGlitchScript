@@ -7,6 +7,7 @@
 ## Features
 
 - **Freeze Glitch Automation**: Automatically saves cursor position and spams spacebar to freeze the client.
+- **First Person / Mouse Lock Support**: Toggle switch to fix compatibility when playing in first-person or with shift-lock active.
 - **Modern UI**: Clean, dark-themed interface with Windows 10/11 acrylic (blur) effect.
 - **Hotkeys**:
   - `Q`: Set the freeze point (cursor position).
@@ -16,7 +17,7 @@
 ## Installation
 
 ### Option 1: Download Executable (Recommended)
-1. Go to the [Releases](https://github.com/Plexity3D/RobloxFreezeGlitchScript/releases) page.
+1. Go to the [Releases](https://github.com/404fr/RobloxFreezeGlitchScript/releases) page.
 2. Download the latest `RoFreeze.exe`.
 3. Run the executable.
 
@@ -26,7 +27,7 @@ If you prefer to run the Python script directly:
 1. **Prerequisites**: Python 3.8+ installed.
 2. **Clone the repository**:
    ```bash
-   git clone https://github.com/Plexity3D/RobloxFreezeGlitchScript.git
+   git clone https://github.com/404fr/RobloxFreezeGlitchScript.git
    cd RobloxFreezeGlitchScript
    ```
 3. **Install dependencies**:
@@ -51,7 +52,9 @@ If you prefer to run the Python script directly:
 6. **Unfreeze**: Press **`F3`** again to toggle it off.
 7. To stop the tool completely, click "Stop" in the app or close the window.
 
-> **Note**: This glitch may behave differently depending on the Roblox camera mode (e.g., it often breaks in first-person/shiftlock modes).
+### First Person / Mouse Lock
+
+If you're playing in first-person mode or with shift-lock active, enable the **"First Person / Mouse Lock"** toggle in the app before using the glitch. This releases Roblox's cursor confinement before acting and skips the mouse suppression step that normally conflicts with the game's raw camera input. The confinement is fully restored when you press F3 to unfreeze.
 
 ## Troubleshooting
 

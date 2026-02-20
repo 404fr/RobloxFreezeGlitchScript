@@ -4,8 +4,8 @@ Provides styled buttons with gradients, glow effects, and animations.
 """
 
 from PyQt6.QtWidgets import QPushButton, QLabel, QWidget, QHBoxLayout
-from PyQt6.QtGui import QFont, QCursor, QColor, QPainter, QLinearGradient, QPen
-from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, pyqtProperty, QRect
+from PyQt6.QtGui import QFont, QCursor, QColor, QPainter, QLinearGradient, QPen, QPainterPath
+from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, pyqtProperty, pyqtSignal, QRect, QRectF
 
 
 class ModernButton(QPushButton):
@@ -90,9 +90,15 @@ class ModernButton(QPushButton):
         """Custom paint with gradient and glow."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        
+
         rect = self.rect()
         radius = 25
+
+        # Clip to the button's rounded shape so hover glow stays within
+        # the button's own border-radius and doesn't fill its corner areas.
+        clip = QPainterPath()
+        clip.addRoundedRect(QRectF(rect), radius, radius)
+        painter.setClipPath(clip)
         
         if self._is_primary:
             # Create gradient based on state
@@ -250,6 +256,168 @@ class KeyBadge(QWidget):
         painter.end()
 
 
+class StatusBadge(QWidget):
+    """Compact pill-shaped status badge for the header area."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._status = "ready"
+        self._text = "Ready"
+        self._pulse = 0.0
+
+        self.setFixedSize(120, 32)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+
+        self._pulse_anim = QPropertyAnimation(self, b"pulse")
+        self._pulse_anim.setDuration(1200)
+        self._pulse_anim.setStartValue(0.0)
+        self._pulse_anim.setEndValue(1.0)
+        self._pulse_anim.setLoopCount(-1)
+        self._pulse_anim.setEasingCurve(QEasingCurve.Type.InOutSine)
+
+    @pyqtProperty(float)
+    def pulse(self):
+        return self._pulse
+
+    @pulse.setter
+    def pulse(self, value):
+        self._pulse = value
+        self.update()
+
+    def set_status(self, status: str, text: str = ""):
+        self._status = status
+        self._text = text or status.capitalize()
+        if status in ("running", "frozen"):
+            self._pulse_anim.start()
+        else:
+            self._pulse_anim.stop()
+            self._pulse = 0.0
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Pill background
+        painter.setBrush(QColor(255, 255, 255, 20))
+        painter.setPen(QPen(QColor(255, 255, 255, 40), 1))
+        painter.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), 15, 15)
+
+        colors = {
+            "ready": QColor(150, 150, 160),
+            "running": QColor(34, 211, 238),
+            "frozen": QColor(96, 165, 250),
+            "stopped": QColor(248, 113, 113),
+        }
+        color = colors.get(self._status, colors["ready"])
+
+        cx, cy = 18, self.height() // 2
+
+        # Pulsing ring for active states
+        if self._status in ("running", "frozen"):
+            ring_color = QColor(color)
+            ring_color.setAlpha(int((1 - self._pulse) * 120))
+            ring_r = int(5 + self._pulse * 6)
+            painter.setPen(QPen(ring_color, 1))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(cx - ring_r, cy - ring_r, ring_r * 2, ring_r * 2)
+
+        # Center dot
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(color)
+        painter.drawEllipse(cx - 5, cy - 5, 10, 10)
+
+        # Status text
+        painter.setPen(color)
+        font = QFont("Segoe UI", 9)
+        font.setBold(True)
+        painter.setFont(font)
+        text_rect = QRect(32, 0, self.width() - 36, self.height())
+        painter.drawText(
+            text_rect,
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+            self._text,
+        )
+
+        painter.end()
+
+
+class KeyButton(QWidget):
+    """Large glassmorphism key button for the bottom shortcut row."""
+
+    def __init__(self, key: str, label: str = "", parent=None, tooltip: str = ""):
+        super().__init__(parent)
+        self._key = key
+        self._label = label
+        self._pressed = False
+        self._hover = False
+
+        self.setFixedHeight(70)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+
+        if tooltip:
+            self.setToolTip(tooltip)
+        self.setAccessibleName(f"Key {key}, {label}")
+
+    def set_pressed(self, pressed: bool):
+        self._pressed = pressed
+        self.update()
+
+    def enterEvent(self, event):
+        self._hover = True
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hover = False
+        self.update()
+        super().leaveEvent(event)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        rect = self.rect().adjusted(2, 2, -2, -2)
+        radius = 16
+
+        if self._pressed:
+            bg = QColor(34, 211, 238, 60)
+            border = QColor(34, 211, 238, 200)
+        elif self._hover:
+            bg = QColor(255, 255, 255, 30)
+            border = QColor(255, 255, 255, 80)
+        else:
+            bg = QColor(255, 255, 255, 15)
+            border = QColor(255, 255, 255, 40)
+
+        painter.setBrush(bg)
+        painter.setPen(QPen(border, 1.5))
+        painter.drawRoundedRect(rect, radius, radius)
+
+        # Key name
+        key_color = QColor(34, 211, 238) if self._pressed else QColor(255, 255, 255, 230)
+        painter.setPen(key_color)
+        font = QFont("Segoe UI", 16)
+        font.setBold(True)
+        painter.setFont(font)
+
+        if self._label:
+            key_rect = QRect(rect.x(), rect.y(), rect.width(), rect.height() - 22)
+            painter.drawText(key_rect, Qt.AlignmentFlag.AlignCenter, self._key)
+
+            painter.setPen(QColor(150, 170, 190, 200))
+            font.setPointSize(8)
+            font.setBold(False)
+            painter.setFont(font)
+            label_rect = QRect(rect.x(), rect.bottom() - 20, rect.width(), 20)
+            painter.drawText(label_rect, Qt.AlignmentFlag.AlignCenter, self._label)
+        else:
+            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self._key)
+
+        painter.end()
+
+
 class StatusIndicator(QWidget):
     """Animated status indicator with pulsing ring."""
     
@@ -336,7 +504,109 @@ class StatusIndicator(QWidget):
         font.setBold(True)
         painter.setFont(font)
         text_rect = QRect(50, 0, 140, self.height())
-        painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter | 
+        painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter |
                         Qt.AlignmentFlag.AlignLeft, self._text)
-        
+
+        painter.end()
+
+
+class ToggleSwitch(QWidget):
+    """iOS-style animated pill toggle switch.
+
+    Emits toggled(bool) on user click.
+    Track interpolates gray (off) to cyan (on) as the thumb slides.
+    Fixed size: 44x24 px.
+    """
+
+    toggled = pyqtSignal(bool)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._checked = False
+        # Float in [0.0, 1.0]: 0.0 = thumb fully left (off), 1.0 = fully right (on)
+        self._thumb_pos = 0.0
+
+        self.setFixedSize(44, 24)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+
+        self._anim = QPropertyAnimation(self, b"thumbPos")
+        self._anim.setDuration(180)
+        self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+    @pyqtProperty(float)
+    def thumbPos(self):
+        return self._thumb_pos
+
+    @thumbPos.setter
+    def thumbPos(self, value):
+        self._thumb_pos = value
+        self.update()
+
+    def is_checked(self) -> bool:
+        return self._checked
+
+    def set_checked(self, checked: bool, animate: bool = True):
+        """Programmatically set state. Does NOT emit toggled."""
+        self._checked = checked
+        target = 1.0 if checked else 0.0
+        if animate:
+            self._anim.stop()
+            self._anim.setStartValue(self._thumb_pos)
+            self._anim.setEndValue(target)
+            self._anim.start()
+        else:
+            self._thumb_pos = target
+            self.update()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._checked = not self._checked
+            target = 1.0 if self._checked else 0.0
+            self._anim.stop()
+            self._anim.setStartValue(self._thumb_pos)
+            self._anim.setEndValue(target)
+            self._anim.start()
+            self.toggled.emit(self._checked)
+        super().mousePressEvent(event)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        w, h = self.width(), self.height()
+        track_radius = h / 2
+        t = self._thumb_pos
+
+        # Track color: gray (off) -> cyan (on)
+        r = int(80 + t * (34 - 80))
+        g = int(80 + t * (211 - 80))
+        b = int(90 + t * (238 - 90))
+        a = int(200 + t * (220 - 200))
+        track_color = QColor(r, g, b, a)
+
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(track_color)
+        painter.drawRoundedRect(QRectF(0, 0, w, h), track_radius, track_radius)
+
+        # Subtle border
+        painter.setPen(QPen(QColor(255, 255, 255, 40), 1))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRoundedRect(QRectF(0.5, 0.5, w - 1, h - 1), track_radius, track_radius)
+
+        # Thumb
+        thumb_d = h - 4  # 20px diameter
+        travel = w - thumb_d - 4  # 20px travel range
+        thumb_x = 2 + t * travel
+        thumb_y = 2.0
+
+        # Drop shadow
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(0, 0, 0, 40))
+        painter.drawEllipse(QRectF(thumb_x - 1, thumb_y + 1, thumb_d + 2, thumb_d + 2))
+
+        # White thumb
+        painter.setBrush(QColor(255, 255, 255, 240))
+        painter.drawEllipse(QRectF(thumb_x, thumb_y, thumb_d, thumb_d))
+
         painter.end()

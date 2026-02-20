@@ -48,6 +48,8 @@ class FreezeTool:
         self.keyboard_listener = None
         self.running = False
         self.status_callback = status_callback
+        self.first_person_mode = False
+        self._saved_clip_rect = None
 
     def log(self, message):
         """
@@ -99,6 +101,14 @@ class FreezeTool:
                 if self.saved_coordinatesBefore:
                     mouse.move(*self.saved_coordinatesBefore)
 
+            if self._saved_clip_rect is not None:
+                try:
+                    import ctypes
+                    ctypes.windll.user32.ClipCursor(ctypes.byref(self._saved_clip_rect))
+                except Exception:
+                    pass
+                self._saved_clip_rect = None
+
             self.f3_pressed = False
             self.log("Tool stopped.")
 
@@ -143,6 +153,15 @@ class FreezeTool:
     def toggle_freeze(self):
         """
         Toggle the freeze state on or off.
+
+        In first-person / mouse-lock mode:
+        - Calls ClipCursor(None) to release Roblox's cursor confinement.
+        - Skips moving the mouse to saved_coordinates (position is irrelevant
+          when the game controls the cursor).
+        - Skips starting the suppressive pynput mouse listener (Roblox uses
+          raw DirectInput for camera; suppressing WM_MOUSEMOVE causes jitter).
+        - Still holds left mouse button and spams spacebar (required for the glitch).
+        On disable, skips restoring cursor position since it was never moved.
         """
         self.f3_pressed = not self.f3_pressed
         if self.f3_pressed:
@@ -150,6 +169,18 @@ class FreezeTool:
                 self.saved_coordinatesBefore = pyautogui.position()
 
             self.log("Freeze ENABLED")
+
+            if self.first_person_mode:
+                # Save Roblox's clip rect then release it so SetCursorPos can land
+                try:
+                    import ctypes
+                    import ctypes.wintypes
+                    rect = ctypes.wintypes.RECT()
+                    ctypes.windll.user32.GetClipCursor(ctypes.byref(rect))
+                    self._saved_clip_rect = rect
+                    ctypes.windll.user32.ClipCursor(None)
+                except Exception:
+                    self._saved_clip_rect = None
 
             if mouse:
                 mouse.release('left')
@@ -160,8 +191,9 @@ class FreezeTool:
 
             self.freeze_event.set()
 
-            # Start mouse listener to suppress movement
-            if pynput:
+            # Skip suppressive listener in first-person: Roblox uses raw DirectInput
+            # for camera; suppressing WM_MOUSEMOVE causes camera lock/jitter.
+            if not self.first_person_mode and pynput:
                 self.mouse_listener = pynput.mouse.Listener(suppress=True)
                 self.mouse_listener.start()
         else:
@@ -175,3 +207,12 @@ class FreezeTool:
                 mouse.release('left')
                 if self.saved_coordinatesBefore:
                     mouse.move(*self.saved_coordinatesBefore)
+
+            if self.first_person_mode and self._saved_clip_rect is not None:
+                # Restore Roblox's cursor confinement
+                try:
+                    import ctypes
+                    ctypes.windll.user32.ClipCursor(ctypes.byref(self._saved_clip_rect))
+                except Exception:
+                    pass
+                self._saved_clip_rect = None
