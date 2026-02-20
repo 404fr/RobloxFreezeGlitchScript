@@ -1,0 +1,36 @@
+name: Build Windows Executable
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Build with PyInstaller
+      run: |
+        python -m PyInstaller --noconfirm --onefile --windowed --name "RoFreeze" --add-data "src/core/freeze_logic.py;src/core" --add-data "src/ui/blur_window.py;src/ui" --add-data "RoFreezeIcon.png;." --add-data "johny-goerend-NorthenLight-unsplash.jpg;." --icon "RoFreezeIcon.png" main.py
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: RoFreeze-Windows
+        path: dist/RoFreeze.exe
