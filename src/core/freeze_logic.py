@@ -96,10 +96,19 @@ class FreezeTool:
                 self.mouse_listener.stop()
 
             # Reset state
-            if self.f3_pressed and mouse:
-                mouse.release('left')
-                if self.saved_coordinatesBefore:
-                    mouse.move(*self.saved_coordinatesBefore)
+            if self.f3_pressed:
+                # Release any confinement before moving the cursor back
+                if self.first_person_mode:
+                    try:
+                        import ctypes
+                        ctypes.windll.user32.ClipCursor(None)
+                    except Exception:
+                        pass
+
+                if mouse:
+                    mouse.release('left')
+                    if self.saved_coordinatesBefore:
+                        mouse.move(*self.saved_coordinatesBefore)
 
             if self._saved_clip_rect is not None:
                 try:
@@ -154,14 +163,17 @@ class FreezeTool:
         """
         Toggle the freeze state on or off.
 
-        In first-person / mouse-lock mode:
-        - Calls ClipCursor(None) to release Roblox's cursor confinement.
-        - Skips moving the mouse to saved_coordinates (position is irrelevant
-          when the game controls the cursor).
-        - Skips starting the suppressive pynput mouse listener (Roblox uses
-          raw DirectInput for camera; suppressing WM_MOUSEMOVE causes jitter).
-        - Still holds left mouse button and spams spacebar (required for the glitch).
-        On disable, skips restoring cursor position since it was never moved.
+        Both modes use pynput.mouse.Listener(suppress=True) to lock the cursor.
+        suppress=True hooks WH_MOUSE_LL (mouse message queue) and does NOT
+        intercept WM_INPUT (raw input), so Roblox's first-person camera still
+        receives raw device data and works normally.
+
+        First-person / mouse-lock mode adds:
+        - GetClipCursor to save Roblox's confinement rect.
+        - ClipCursor(None) before mouse.move() so SetCursorPos can land at
+          saved_coordinates (which Roblox's ClipCursor would otherwise block).
+        - ClipCursor(None) on disable so the cursor can travel back, then
+          restores Roblox's original rect.
         """
         self.f3_pressed = not self.f3_pressed
         if self.f3_pressed:
@@ -171,7 +183,7 @@ class FreezeTool:
             self.log("Freeze ENABLED")
 
             if self.first_person_mode:
-                # Save Roblox's clip rect then release it so SetCursorPos can land
+                # Save Roblox's clip rect and release it so SetCursorPos can land
                 try:
                     import ctypes
                     import ctypes.wintypes
@@ -191,9 +203,7 @@ class FreezeTool:
 
             self.freeze_event.set()
 
-            # Skip suppressive listener in first-person: Roblox uses raw DirectInput
-            # for camera; suppressing WM_MOUSEMOVE causes camera lock/jitter.
-            if not self.first_person_mode and pynput:
+            if pynput:
                 self.mouse_listener = pynput.mouse.Listener(suppress=True)
                 self.mouse_listener.start()
         else:
@@ -203,13 +213,21 @@ class FreezeTool:
                 self.mouse_listener.stop()
                 self.mouse_listener = None
 
+            if self.first_person_mode:
+                # Release confinement so the cursor can travel back
+                try:
+                    import ctypes
+                    ctypes.windll.user32.ClipCursor(None)
+                except Exception:
+                    pass
+
             if mouse:
                 mouse.release('left')
                 if self.saved_coordinatesBefore:
                     mouse.move(*self.saved_coordinatesBefore)
 
             if self.first_person_mode and self._saved_clip_rect is not None:
-                # Restore Roblox's cursor confinement
+                # Restore Roblox's original cursor confinement
                 try:
                     import ctypes
                     ctypes.windll.user32.ClipCursor(ctypes.byref(self._saved_clip_rect))

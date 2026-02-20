@@ -46,11 +46,14 @@ The project follows a clear separation of concerns:
 - Development on non-Windows platforms is possible for logic, but the UI effects and first-person mode path may not work correctly.
 
 ### 4. First Person / Mouse Lock Mode
-`FreezeTool` has a `first_person_mode: bool` flag (default `False`) toggled via the `ToggleSwitch` in the UI. When enabled, `toggle_freeze()`:
+`FreezeTool` has a `first_person_mode: bool` flag (default `False`) toggled via the `ToggleSwitch` in the UI.
+
+Both modes use `pynput.mouse.Listener(suppress=True)` to lock the cursor. `suppress=True` hooks `WH_MOUSE_LL` (mouse message queue) and does **not** intercept `WM_INPUT` (raw input), so Roblox's first-person camera still receives raw device data normally.
+
+When `first_person_mode` is enabled, `toggle_freeze()` additionally:
 1. Saves Roblox's `ClipCursor` rect via `GetClipCursor` into `self._saved_clip_rect`.
-2. Calls `ClipCursor(None)` to release the confinement so `mouse.move()` can land.
-3. Skips starting `pynput.mouse.Listener(suppress=True)` (that listener conflicts with Roblox's raw DirectInput camera in first-person).
-4. On disable (F3 again or `stop_tool()`), restores the saved rect via `ClipCursor(byref(self._saved_clip_rect))`.
+2. Calls `ClipCursor(None)` to release the confinement **before** `mouse.move()` — without this, Roblox's `ClipCursor` blocks `SetCursorPos` from landing at `saved_coordinates`.
+3. On disable (F3 again or `stop_tool()`): calls `ClipCursor(None)` so the cursor can travel back, then restores the saved rect via `ClipCursor(byref(self._saved_clip_rect))`.
 
 Do not remove the `_saved_clip_rect` save/restore pattern — it is what allows the game's cursor lock to snap back after the freeze is released.
 
